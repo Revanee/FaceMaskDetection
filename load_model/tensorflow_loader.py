@@ -1,44 +1,39 @@
 # -*- encoding=utf-8 -*-
-import tensorflow as tf
-if tf.__version__ > '2':
-    import tensorflow.compat.v1 as tf  
+# import tensorflow as tf
+import tflite_runtime.interpreter as tflite
 
 import numpy as np
 
 PATH_TO_TENSORFLOW_MODEL = 'models/face_mask_detection.pb'
+EDGETPU_SHARED_LIB = "libedgetpu.so.1"
 
 def load_tf_model(tf_model_path):
-    '''
-    Load the model.
-    :param tf_model_path: model to tensorflow model.
-    :return: session and graph
-    '''
-    detection_graph = tf.Graph()
-    with detection_graph.as_default():
-        od_graph_def = tf.GraphDef()
-        with tf.gfile.GFile(tf_model_path, 'rb') as fid:
-            serialized_graph = fid.read()
-            od_graph_def.ParseFromString(serialized_graph)
-            tf.import_graph_def(od_graph_def, name='')
-            with detection_graph.as_default():
-                sess = tf.Session(graph=detection_graph)
-                return sess, detection_graph
+    # Load the TFLite model and allocate tensors.
+    model_file, *device = tf_model_path.split('@')
+    interpreter = tflite.Interpreter(
+        model_path=model_file,
+        experimental_delegates=[
+           tflite.load_delegate(EDGETPU_SHARED_LIB,
+                                {'device': device[0]} if device else {})
+         ]
+    )
+
+    interpreter.allocate_tensors()
+
+    # Get input and output tensors.
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
+
+    return interpreter, input_details, output_details
 
 
-def tf_inference(sess, detection_graph, img_arr):
-    '''
-    Receive an image array and run inference
-    :param sess: tensorflow session.
-    :param detection_graph: tensorflow graph.
-    :param img_arr: 3D numpy array, RGB order.
-    :return:
-    '''
-    image_tensor = detection_graph.get_tensor_by_name('data_1:0')
-    detection_bboxes = detection_graph.get_tensor_by_name('loc_branch_concat_1/concat:0')
-    detection_scores = detection_graph.get_tensor_by_name('cls_branch_concat_1/concat:0')
-    # image_np_expanded = np.expand_dims(img_arr, axis=0)
-    bboxes, scores = sess.run([detection_bboxes, detection_scores],
-                            feed_dict={image_tensor: img_arr})
+def tf_inference(interpreter, input_details, output_details, img_arr):
+    img_arr = img_arr.astype(np.float32)
+
+    interpreter.set_tensor(input_details[0]['index'], [np.reshape(img_arr, (260, 260, 3))])
+    interpreter.invoke()
+    bboxes = interpreter.get_tensor(output_details[0]['index'])
+    scores = interpreter.get_tensor(output_details[1]['index'])
 
     return bboxes, scores
 

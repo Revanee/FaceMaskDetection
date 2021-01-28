@@ -11,7 +11,7 @@ from utils.anchor_decode import decode_bbox
 from utils.nms import single_class_non_max_suppression
 from load_model.tensorflow_loader import load_tf_model, tf_inference
 
-sess, graph = load_tf_model('models/face_mask_detection.pb')
+interpreter, input_details, output_details = load_tf_model('models/face_mask_detection.tflite')
 # anchor configuration
 feature_map_sizes = [[33, 33], [17, 17], [9, 9], [5, 5], [3, 3]]
 anchor_sizes = [[0.04, 0.056], [0.08, 0.11], [0.16, 0.22], [0.32, 0.45], [0.64, 0.72]]
@@ -50,7 +50,7 @@ def inference(image,
     image_resized = cv2.resize(image, target_shape)
     image_np = image_resized / 255.0  # 归一化到0~1
     image_exp = np.expand_dims(image_np, axis=0)
-    y_bboxes_output, y_cls_output = tf_inference(sess, graph, image_exp)
+    y_bboxes_output, y_cls_output = tf_inference(interpreter, input_details, output_details, image_exp)
 
     # remove the batch dimension, for batch is always 1 for inference.
     y_bboxes = decode_bbox(anchors_exp, y_bboxes_output)[0]
